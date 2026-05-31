@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'captchamaster-api',
+      name: 'velox-api-7x2k',
       script: 'dist/server.js',
       instances: 'max',
       exec_mode: 'cluster',
