@@ -208,9 +208,6 @@ export const createCryptomusInvoice = asyncHandler(async (req: Request, res: Res
     const invoice = await cryptomusCreateInvoice({ amount, orderId, merchantId, apiKey });
     sendSuccess(res, { data: { url: invoice.url, invoiceId: invoice.invoiceId } });
   } catch (err: any) {
-    if (err.response?.status === 401) {
-      throw new ApiError(502, 'Cryptomus payment gateway not configured or invalid credentials. Contact support.');
-    }
     throw new ApiError(502, 'Payment service unavailable: ' + (err.message || 'Unknown error'));
   }
 });
