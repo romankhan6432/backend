@@ -7,6 +7,8 @@ interface CreateInvoiceParams {
     amount: number;
     currency?: string;
     orderId: string;
+    toCurrency?: string;
+    network?: string;
     merchantId?: string;
     apiKey?: string;
 }
@@ -14,6 +16,8 @@ interface CreateInvoiceParams {
 interface CreateInvoiceResponse {
     url: string;
     invoiceId: string;
+    address?: string;
+    network?: string;
 }
 
 function generateSign(body: object, apiKey: string): string {
@@ -23,7 +27,7 @@ function generateSign(body: object, apiKey: string): string {
 }
 
 export async function createInvoice(params: CreateInvoiceParams): Promise<CreateInvoiceResponse> {
-    const { amount, currency = 'USD', orderId, merchantId, apiKey } = params;
+    const { amount, currency = 'USD', orderId, toCurrency, network, merchantId, apiKey } = params;
 
     if (!merchantId || !apiKey) {
         const err: any = new Error('Cryptomus payment gateway not configured or invalid credentials. Contact support.');
@@ -31,11 +35,15 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Create
         throw err;
     }
 
-    const payload = {
+    const payload: Record<string, any> = {
         amount: amount.toFixed(2),
         currency,
         order_id: orderId,
     };
+
+    // Pass to_currency + network to get wallet address immediately
+    if (toCurrency) payload.to_currency = toCurrency;
+    if (network) payload.network = network;
 
     const sign = generateSign(payload, apiKey);
 
@@ -59,6 +67,8 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Create
 
     const data = res.response;
 
+    console.log(data)
+
     if (!data?.result?.url || !data?.result?.uuid) {
         const msg: string = data?.message || 'Cryptomus: unexpected response';
         const err: any = new Error(msg);
@@ -69,5 +79,86 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Create
     return {
         url: data.result.url,
         invoiceId: data.result.uuid,
+        address: data.result.address || undefined,
+        network: data.result.network || undefined,
     };
+}
+
+/** Verify Cryptomus webhook signature */
+export function verifyWebhookSign(body: string, signHeader: string, apiKey: string): boolean {
+    if (!body || !signHeader || !apiKey) return false;
+    const computed = crypto.createHash('md5').update(body + apiKey).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(computed), Buffer.from(signHeader));
+}
+
+export interface PaymentInfo {
+    uuid: string;
+    orderId: string;
+    status: string;
+    amount: string;
+    paymentAmount: string | null;
+    payerAmount: string | null;
+    payerCurrency: string | null;
+    currency: string;
+    network: string | null;
+    address: string | null;
+    txid: string | null;
+    isFinal: boolean;
+    url: string;
+    expiredAt: number | null;
+}
+
+/** Check payment status — accepts uuid or order_id. Returns full payment info. */
+export async function checkPaymentStatus(
+    id: string,
+    merchantId: string,
+    apiKey: string,
+    lookupBy: 'uuid' | 'order_id' = 'uuid',
+): Promise<PaymentInfo> {
+    const payload = lookupBy === 'order_id' ? { order_id: id } : { uuid: id };
+    const sign = generateSign(payload, apiKey);
+
+    const res = await API_CALL({
+        method: 'POST',
+        url: '/payment/info',
+        baseURL: CRYPTOMUS_API_URL,
+        body: payload,
+        headers: {
+            'merchant': merchantId,
+            'sign': sign,
+        },
+    });
+
+    const data = res.response;
+    if (!data?.result) {
+        throw new Error(data?.message || 'Cryptomus: failed to check payment status');
+    }
+
+    const r = data.result;
+    return {
+        uuid: r.uuid,
+        orderId: r.order_id,
+        status: r.status,
+        amount: r.amount,
+        paymentAmount: r.payment_amount ?? null,
+        payerAmount: r.payer_amount ?? null,
+        payerCurrency: r.payer_currency ?? null,
+        currency: r.currency,
+        network: r.network ?? null,
+        address: r.address ?? null,
+        txid: r.txid ?? null,
+        isFinal: r.is_final ?? false,
+        url: r.url,
+        expiredAt: r.expired_at ?? null,
+    };
+}
+
+/** Payment is considered successful */
+export function isPaid(status: string): boolean {
+    return status === 'paid' || status === 'paid_over';
+}
+
+/** Payment is considered failed/cancelled */
+export function isFailed(status: string): boolean {
+    return status === 'cancel' || status === 'fail' || status === 'expired';
 }

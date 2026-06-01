@@ -5,6 +5,7 @@ import { sendSuccess } from '@/utils/response';
 import { User } from '@/models/User';
 import { Package } from '@/models/Package';
 import { Transaction } from '@/models/Transaction';
+import { Deposit } from '@/models/Deposit';
 import { PromoCode } from '@/models/PromoCode';
 import { SystemSetting } from '@/models/SystemSetting';
 import { createInvoice as cryptomusCreateInvoice } from '@/services/cryptomus';
@@ -190,14 +191,14 @@ export const getHistory = asyncHandler(async (req: Request, res: Response) => {
 // POST /topup/cryptomus/create-invoice
 export const createCryptomusInvoice = asyncHandler(async (req: Request, res: Response) => {
   const userId = (req as any).user._id;
-  const { amount } = req.body;
+  const { amount, currency, network } = req.body;
 
   if (!amount || amount <= 0) throw new ApiError(400, 'Amount must be greater than 0');
   if (amount > 10000) throw new ApiError(400, 'Amount cannot exceed $10,000');
 
   const orderId = `topup_${userId}_${Date.now()}`;
 
-  // Fetch Cryptomus credentials from admin settings, fallback to env vars
+  // Fetch Cryptomus credentials from admin settings
   let merchantId: string | undefined;
   let apiKey: string | undefined;
 
@@ -206,9 +207,73 @@ export const createCryptomusInvoice = asyncHandler(async (req: Request, res: Res
     merchantId = settings?.cryptomusMerchantId?.trim() || undefined;
     apiKey = settings?.cryptomusApiKey?.trim() || undefined;
   } catch {
-    // DB query failed — fallback silently to env vars (handled inside service)
+    // DB query failed — fallback silently (handled inside service)
   }
 
+  if (currency && network) {
+    const invoice = await cryptomusCreateInvoice({
+      amount,
+      orderId,
+      toCurrency: currency,
+      network,
+      merchantId,
+      apiKey,
+    });
+
+    // Create pending Deposit record for admin orders tracking
+    await Deposit.create({
+      userId,
+      cryptoId: currency,
+      cryptoName: currency,
+      networkId: network,
+      networkName: invoice.network || network,
+      amount: 0,
+      amountUSD: amount,
+      address: invoice.address || '',
+      status: 'pending',
+      confirmations: 0,
+      requiredConfirmations: 1,
+      fee: '0',
+      notes: invoice.invoiceId,
+    });
+
+    return sendSuccess(res, {
+      data: {
+        url: invoice.url,
+        invoiceId: invoice.invoiceId,
+        walletAddress: invoice.address,
+        network: invoice.network || network,
+        paymentAmount: amount,
+      },
+    });
+  }
+
+  // Fallback: no currency/network, generic invoice
   const invoice = await cryptomusCreateInvoice({ amount, orderId, merchantId, apiKey });
-  sendSuccess(res, { data: { url: invoice.url, invoiceId: invoice.invoiceId } });
+
+  await Deposit.create({
+    userId,
+    cryptoId: currency || 'Crypto',
+    cryptoName: currency || 'Crypto',
+    networkId: 'default',
+    networkName: invoice.network || 'default',
+    amount: 0,
+    amountUSD: amount,
+    address: invoice.address || '',
+    status: 'pending',
+    confirmations: 0,
+    requiredConfirmations: 1,
+    fee: '0',
+    notes: invoice.invoiceId,
+  });
+
+  sendSuccess(res, {
+    data: {
+      url: invoice.url,
+      invoiceId: invoice.invoiceId,
+      walletAddress: invoice.address,
+      network: invoice.network,
+      paymentAmount: amount,
+    },
+  });
 });

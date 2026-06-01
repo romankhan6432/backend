@@ -17,6 +17,7 @@ const SystemSettingSchema = new mongoose.Schema({
     // Cryptomus Payment Gateway
     cryptomusMerchantId: { type: String, default: '' },
     cryptomusApiKey: { type: String, default: '' },
+    cryptomusCreditsPerDollar: { type: Number, default: 1000 },
 
     // Cache Control
     cacheControlAws: { type: Boolean, default: true },
