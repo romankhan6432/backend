@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import asyncHandler from '@/utils/asyncHandler';
 import { ApiError } from '@/utils/ApiError';
 import { sendSuccess } from '@/utils/response';
-import { connectDB } from '@/config';
 import { User } from '@/models/User';
 import { Package } from '@/models/Package';
 import { Transaction } from '@/models/Transaction';
@@ -198,16 +197,18 @@ export const createCryptomusInvoice = asyncHandler(async (req: Request, res: Res
 
   const orderId = `topup_${userId}_${Date.now()}`;
 
-  // Fetch Cryptomus credentials from admin settings (fallback to env)
-  await connectDB();
-  const settings = await SystemSetting.findOne();
-  const merchantId = settings?.cryptomusMerchantId?.trim() || undefined;
-  const apiKey = settings?.cryptomusApiKey?.trim() || undefined;
+  // Fetch Cryptomus credentials from admin settings, fallback to env vars
+  let merchantId: string | undefined;
+  let apiKey: string | undefined;
 
   try {
-    const invoice = await cryptomusCreateInvoice({ amount, orderId, merchantId, apiKey });
-    sendSuccess(res, { data: { url: invoice.url, invoiceId: invoice.invoiceId } });
-  } catch (err: any) {
-    throw new ApiError(502, 'Payment service unavailable: ' + (err.message || 'Unknown error'));
+    const settings = await SystemSetting.findOne();
+    merchantId = settings?.cryptomusMerchantId?.trim() || undefined;
+    apiKey = settings?.cryptomusApiKey?.trim() || undefined;
+  } catch {
+    // DB query failed — fallback silently to env vars (handled inside service)
   }
+
+  const invoice = await cryptomusCreateInvoice({ amount, orderId, merchantId, apiKey });
+  sendSuccess(res, { data: { url: invoice.url, invoiceId: invoice.invoiceId } });
 });

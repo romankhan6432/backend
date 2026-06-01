@@ -26,9 +26,11 @@ function generateSign(body: object, apiKey: string): string {
 export async function createInvoice(params: CreateInvoiceParams): Promise<CreateInvoiceResponse> {
     const { amount, currency = 'USD', orderId, merchantId, apiKey } = params;
 
-   
+    // Use env vars as fallback if not provided via params
+    const resolvedMerchantId = merchantId || env.CRYPTOMUS_MERCHANT_ID || undefined;
+    const resolvedApiKey = apiKey || env.CRYPTOMUS_API_KEY || undefined;
 
-    if (!merchantId || !apiKey) {
+    if (!resolvedMerchantId || !resolvedApiKey) {
         const err: any = new Error('Cryptomus payment gateway not configured or invalid credentials. Contact support.');
         err.response = { status: 401 };
         throw err;
@@ -40,8 +42,7 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Create
         order_id: orderId,
     };
 
-
-    const sign = generateSign(payload, apiKey);
+    const sign = generateSign(payload, resolvedApiKey);
 
     const res = await API_CALL({
         method: 'POST',
@@ -49,7 +50,7 @@ export async function createInvoice(params: CreateInvoiceParams): Promise<Create
         baseURL: CRYPTOMUS_API_URL,
         body: payload,
         headers: {
-            'merchant': merchantId,
+            'merchant': resolvedMerchantId,
             'sign': sign,
         },
     });
