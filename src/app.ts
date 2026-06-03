@@ -38,7 +38,7 @@ export function createApp(): Express {
   // auth-fingerprint middleware — skip upload-model (handled by JWT auth + multer)
   app.use((req, res, next) => {
     if (req.path === '/api/admin/upload-model') return next();
-    fingerprintAuth('signature', env.AUTH_FINGERPRINT_SECRET)(req, res, next);
+    (fingerprintAuth('signature', env.AUTH_FINGERPRINT_SECRET) as any)(req, res, next);
   });
 
   // ───────────────────────────────────────────────────────────────────────────
