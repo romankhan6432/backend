@@ -35,8 +35,11 @@ export function createApp(): Express {
   // ───────────────────────────────────────────────────────────────────────────
   // Fingerprint / request signing verification
   // ───────────────────────────────────────────────────────────────────────────
-  // auth-fingerprint middleware - compatible runtime signature, cast via any for type mismatch
-  app.use(fingerprintAuth('signature', env.AUTH_FINGERPRINT_SECRET) as any);
+  // auth-fingerprint middleware — skip upload-model (handled by JWT auth + multer)
+  app.use((req, res, next) => {
+    if (req.path === '/api/admin/upload-model') return next();
+    fingerprintAuth('signature', env.AUTH_FINGERPRINT_SECRET)(req, res, next);
+  });
 
   // ───────────────────────────────────────────────────────────────────────────
   // Body parsing — raw body for webhook signatures, JSON/form for everything else
